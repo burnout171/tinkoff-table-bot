@@ -19,6 +19,25 @@ import (
 	"github.com/go-telegram-bot-api/telegram-bot-api"
 )
 
+func getConfig() (*oauth2.Config) {
+	credentialsString := os.Getenv("GOOGLE_CREDENTIALS")
+	var credentialsBytes []byte
+	if credentialsString != "" {
+		credentialsBytes = []byte(credentialsString)
+	} else {
+		var err error
+		credentialsBytes, err = ioutil.ReadFile("credentials.json")
+		if err != nil {
+			log.Fatalf("Unable to read client secret file: %v", err)
+		}
+	}
+	config, err := google.ConfigFromJSON(credentialsBytes, "https://www.googleapis.com/auth/spreadsheets")
+	if err != nil {
+		log.Fatalf("Unable to parse client secret file to config: %v", err)
+	}
+	return config
+}
+
 func getClient(config *oauth2.Config) *http.Client {
 	tokenString := os.Getenv("SHEET_TOKEN")
 	if tokenString != "" {
@@ -27,7 +46,6 @@ func getClient(config *oauth2.Config) *http.Client {
 		if err != nil {
 			log.Fatalf("Unable to unmarshall token %v", err)
 		}
-		log.Println(token)
 		return config.Client(context.Background(), token)
 	}
 	tokFile := "token.json"
@@ -94,29 +112,22 @@ func currentDate() (monthName string, day int) {
 	}
 }
 
-func updateTable(input string) (error) {
+func parseInput(input string) (description string, sum float64) {
 	splitted := strings.Split(input, " ")
 	var descriptionSlice [] string
-	var sum int
 	for _, word := range splitted {
-		if value, err := strconv.Atoi(word); err == nil {
+		if value, err := strconv.ParseFloat(word, 64); err == nil {
 			sum += value
 			continue
 		}
 		descriptionSlice = append(descriptionSlice, word)
 	}
-	description := strings.Join(descriptionSlice, ", ")
+	return strings.Join(descriptionSlice, ", "), sum
+}
 
-	b, err := ioutil.ReadFile("credentials.json")
-	if err != nil {
-		log.Fatalf("Unable to read client secret file: %v", err)
-		return err
-	}
-	config, err := google.ConfigFromJSON(b, "https://www.googleapis.com/auth/spreadsheets")
-	if err != nil {
-		log.Fatalf("Unable to parse client secret file to config: %v", err)
-		return err
-	}
+func updateTable(input string) (error) {
+	description, sum := parseInput(input)
+	config := getConfig()
 	client := getClient(config)
 	srv, err := sheets.New(client)
 	if err != nil {
@@ -132,7 +143,6 @@ func updateTable(input string) (error) {
 		return err
 	}
 	log.Println(resp.Values)
-	log.Println("Update entries")
 	var vr sheets.ValueRange
 	var myValues []interface{}
 	if len(resp.Values) == 0 {
@@ -140,11 +150,11 @@ func updateTable(input string) (error) {
 	} else {
 		receicedKey := resp.Values[0][0].(string)
 		receicedValue := resp.Values[0][1].(string)
-		intValue, err := strconv.Atoi(receicedValue)
+		floatValue, err := strconv.ParseFloat(receicedValue, 64)
 		if err != nil {
 			return err
 		}
-		myValues = []interface{}{strings.ToLower(receicedKey+ ", " + description), intValue + sum}
+		myValues = []interface{}{strings.ToLower(receicedKey+ ", " + description), floatValue + sum}
 	}
 	vr.Values = append(vr.Values, myValues)
 	log.Println(vr.Values)
@@ -167,10 +177,9 @@ func main() {
 	u.Timeout = 60
 	updates, err := bot.GetUpdatesChan(u)
 	for update := range updates {
-		if update.Message == nil { // ignore any non-Message Updates
+		if update.Message == nil {
 			continue
 		}
-		log.Printf("[%s] %s", update.Message.From.UserName, update.Message.Text)
 		err := updateTable(update.Message.Text)
 		var replyMessage tgbotapi.MessageConfig
 		if err != nil {
