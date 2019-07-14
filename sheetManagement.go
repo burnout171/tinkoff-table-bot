@@ -21,6 +21,7 @@ import (
 
 func getConfig() (*oauth2.Config) {
 	credentialsString := os.Getenv("GOOGLE_CREDENTIALS")
+	log.Printf("Read from envirinment %s", credentialsString)
 	var credentialsBytes []byte
 	if credentialsString != "" {
 		credentialsBytes = []byte(credentialsString)
