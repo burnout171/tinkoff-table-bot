@@ -7,32 +7,44 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"time"
-	"strings"
 	"strconv"
+	"strings"
+	"time"
 
 	"golang.org/x/net/context"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
 
-	"google.golang.org/api/sheets/v4"
 	"github.com/go-telegram-bot-api/telegram-bot-api"
+	"google.golang.org/api/sheets/v4"
 )
 
-func getConfig() (*oauth2.Config) {
-	credentialsString := os.Getenv("GOOGLE_CREDENTIALS")
-	log.Printf("Read from envirinment %s", credentialsString)
-	var credentialsBytes []byte
-	if credentialsString != "" {
-		credentialsBytes = []byte(credentialsString)
-	} else {
-		var err error
-		credentialsBytes, err = ioutil.ReadFile("credentials.json")
-		if err != nil {
-			log.Fatalf("Unable to read client secret file: %v", err)
+func getConfig() *oauth2.Config {
+	clientID := os.Getenv("GOOGLE_CLIENT_ID")
+	projectID := os.Getenv("GOOGLE_PROJECT_ID")
+	authURI := os.Getenv("GOOGLE_AUTH_URI")
+	tokenURI := os.Getenv("GOOGLE_TOKEN_URI")
+	clientSecret := os.Getenv("GOOGLE_CLIENT_SECRET")
+	redirectUris := os.Getenv("GOOGLE_REDIRECT_URIS")
+	scope := "https://www.googleapis.com/auth/spreadsheets"
+	if clientID != "" && projectID != "" && authURI != "" &&
+		tokenURI != "" && clientSecret != "" && redirectUris != "" {
+		return &oauth2.Config{
+			ClientID:     clientID,
+			ClientSecret: clientSecret,
+			RedirectURL:  redirectUris,
+			Scopes:       []string{scope},
+			Endpoint: oauth2.Endpoint{
+				AuthURL:  authURI,
+				TokenURL: tokenURI,
+			},
 		}
 	}
-	config, err := google.ConfigFromJSON(credentialsBytes, "https://www.googleapis.com/auth/spreadsheets")
+	credentialsBytes, err := ioutil.ReadFile("credentials.json")
+	if err != nil {
+		log.Fatalf("Unable to read client secret file: %v", err)
+	}
+	config, err := google.ConfigFromJSON(credentialsBytes, scope)
 	if err != nil {
 		log.Fatalf("Unable to parse client secret file to config: %v", err)
 	}
@@ -97,25 +109,38 @@ func saveToken(path string, token *oauth2.Token) {
 func currentDate() (monthName string, day int) {
 	_, month, day := time.Now().Date()
 	switch month {
-		case time.January: return "Январь", day
-		case time.February: return "Февраль", day
-		case time.March: return "Март", day
-		case time.April: return "Апрель", day
-		case time.May: return "Май", day
-		case time.June: return "Июнь", day
-		case time.July: return "Июль", day
-		case time.August: return "Август", day
-		case time.September: return "Сентябрь", day
-		case time.October: return "Октябрь", day
-		case time.November: return "Ноябрь", day
-		case time.December: return "Декабрь", day
-		default: return "", day
+	case time.January:
+		return "Январь", day
+	case time.February:
+		return "Февраль", day
+	case time.March:
+		return "Март", day
+	case time.April:
+		return "Апрель", day
+	case time.May:
+		return "Май", day
+	case time.June:
+		return "Июнь", day
+	case time.July:
+		return "Июль", day
+	case time.August:
+		return "Август", day
+	case time.September:
+		return "Сентябрь", day
+	case time.October:
+		return "Октябрь", day
+	case time.November:
+		return "Ноябрь", day
+	case time.December:
+		return "Декабрь", day
+	default:
+		return "", day
 	}
 }
 
 func parseInput(input string) (description string, sum float64) {
 	splitted := strings.Split(input, " ")
-	var descriptionSlice [] string
+	var descriptionSlice []string
 	for _, word := range splitted {
 		if value, err := strconv.ParseFloat(word, 64); err == nil {
 			sum += value
@@ -126,7 +151,7 @@ func parseInput(input string) (description string, sum float64) {
 	return strings.Join(descriptionSlice, ", "), sum
 }
 
-func updateTable(input string) (error) {
+func updateTable(input string) error {
 	description, sum := parseInput(input)
 	config := getConfig()
 	client := getClient(config)
@@ -137,7 +162,7 @@ func updateTable(input string) (error) {
 	}
 	spreadsheetID := os.Getenv("SHEET_ID")
 	month, day := currentDate()
-	workingRange := fmt.Sprintf("%s!H%d:I%d", month, day + 1, day + 1)
+	workingRange := fmt.Sprintf("%s!H%d:I%d", month, day+1, day+1)
 	resp, err := srv.Spreadsheets.Values.Get(spreadsheetID, workingRange).Do()
 	if err != nil {
 		log.Fatalf("Unable to retrieve data from sheet: %v", err)
@@ -155,7 +180,7 @@ func updateTable(input string) (error) {
 		if err != nil {
 			return err
 		}
-		myValues = []interface{}{strings.ToLower(receicedKey+ ", " + description), floatValue + sum}
+		myValues = []interface{}{strings.ToLower(receicedKey + ", " + description), floatValue + sum}
 	}
 	vr.Values = append(vr.Values, myValues)
 	log.Println(vr.Values)
