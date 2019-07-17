@@ -52,20 +52,25 @@ func getConfig() *oauth2.Config {
 }
 
 func getClient(config *oauth2.Config) *http.Client {
-	tokenString := os.Getenv("SHEET_TOKEN")
-	if tokenString != "" {
-		token := &oauth2.Token{}
-		err := json.Unmarshal([]byte(tokenString), token)
-		if err != nil {
-			log.Fatalf("Unable to unmarshall token %v", err)
+	accessToken := os.Getenv("SHEET_ACCESS_TOKEN")
+	tokenType := os.Getenv("SHEET_TOKEN_TYPE")
+	refreshToken := os.Getenv("SHEET_REFRESH_TOKEN")
+	expireTime := os.Getenv("SHEET_TOKEN_EXPIRE_TIME")
+	if accessToken != "" && tokenType != "" && refreshToken != "" {
+		expiry, _ := time.Parse(time.RFC3339, expireTime)
+		token := &oauth2.Token{
+			AccessToken:  accessToken,
+			TokenType:    tokenType,
+			RefreshToken: refreshToken,
+			Expiry:       expiry,
 		}
 		return config.Client(context.Background(), token)
 	}
-	tokFile := "token.json"
-	token, err := tokenFromFile(tokFile)
+	tokenFile := "token.json"
+	token, err := tokenFromFile(tokenFile)
 	if err != nil {
 		token = getTokenFromWeb(config)
-		saveToken(tokFile, token)
+		saveToken(tokenFile, token)
 	}
 	return config.Client(context.Background(), token)
 }
