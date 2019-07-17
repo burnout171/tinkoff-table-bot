@@ -199,7 +199,7 @@ func updateTable(input string) error {
 	var resultRange sheets.ValueRange
 	var myValues []interface{}
 	if len(receivedRange.Values) == 0 {
-		myValues = []interface{}{receivedKey, sum}
+		myValues = []interface{}{strings.ToLower(receivedKey), sum}
 	} else {
 		key := prepareKey(receivedKey, receivedRange.Values[0][0].(string))
 		value := prepareValue(sum, receivedRange.Values[0][1].(string))
