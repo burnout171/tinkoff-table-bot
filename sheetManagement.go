@@ -179,13 +179,24 @@ func updateTable(input string) error {
 	if len(resp.Values) == 0 {
 		myValues = []interface{}{description, sum}
 	} else {
-		receicedKey := resp.Values[0][0].(string)
-		receicedValue := resp.Values[0][1].(string)
-		floatValue, err := strconv.ParseFloat(receicedValue, 64)
-		if err != nil {
-			return err
+		receivedKey := resp.Values[0][0].(string)
+		if strings.Contains(receivedKey, " + ") {
+			receivedKey = strings.Replace(receivedKey, " + ", ", ", -1)
 		}
-		myValues = []interface{}{strings.ToLower(receicedKey + ", " + description), floatValue + sum}
+		receivedValue := resp.Values[0][1].(string)
+		if strings.HasPrefix(receivedValue, "SUM") { // In case SUM() function is used in Sheet to sum the exchanges
+			receivedValue = receivedValue[4 : len(receivedValue)-2]
+			for _, word := range strings.Split(receivedValue, ", ") {
+				if value, _ := strconv.ParseFloat(word, 64); err == nil {
+					sum += value
+					continue
+				}
+			}
+			myValues = []interface{}{strings.ToLower(receivedKey + ", " + description), sum}
+		} else {
+			floatValue, _ := strconv.ParseFloat(receivedValue, 64)
+			myValues = []interface{}{strings.ToLower(receivedKey + ", " + description), floatValue + sum}
+		}
 	}
 	vr.Values = append(vr.Values, myValues)
 	log.Println(vr.Values)
@@ -202,7 +213,9 @@ func main() {
 	if err != nil {
 		log.Panic(err)
 	}
-	bot.Debug = true
+	if debug, _ := strconv.ParseBool(os.Getenv("ENABLE_DEBUG")); debug == true {
+		bot.Debug = true
+	}
 	log.Printf("Authorized on account %s", bot.Self.UserName)
 	u := tgbotapi.NewUpdate(0)
 	u.Timeout = 60
