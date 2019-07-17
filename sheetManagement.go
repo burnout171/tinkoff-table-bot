@@ -15,7 +15,7 @@ import (
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
 
-	"github.com/go-telegram-bot-api/telegram-bot-api"
+	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api"
 	"google.golang.org/api/sheets/v4"
 )
 
@@ -156,53 +156,58 @@ func parseInput(input string) (description string, sum float64) {
 	return strings.Join(descriptionSlice, ", "), sum
 }
 
+func prepareKey(receivedKey string, currentKey string) string {
+	if strings.Contains(currentKey, " + ") {
+		currentKey = strings.Replace(currentKey, " + ", ", ", -1)
+	}
+	if receivedKey == "" {
+		return currentKey
+	}
+	return currentKey + ", " + receivedKey
+}
+
+func prepareValue(sum float64, currentValue string) float64 {
+	if strings.HasPrefix(currentValue, "SUM") { // In case SUM() function is used in Sheet to sum the exchanges
+		currentValue = currentValue[4 : len(currentValue)-2]
+		for _, number := range strings.Split(currentValue, ", ") {
+			if value, err := strconv.ParseFloat(number, 64); err == nil {
+				sum += value
+				continue
+			}
+		}
+		return sum
+	}
+	floatValue, _ := strconv.ParseFloat(currentValue, 64)
+	return sum + floatValue
+}
+
 func updateTable(input string) error {
-	description, sum := parseInput(input)
+	receivedKey, sum := parseInput(input)
 	config := getConfig()
 	client := getClient(config)
 	srv, err := sheets.New(client)
 	if err != nil {
 		log.Fatalf("Unable to retrieve Sheets client: %v", err)
-		return err
 	}
 	spreadsheetID := os.Getenv("SHEET_ID")
 	month, day := currentDate()
 	workingRange := fmt.Sprintf("%s!H%d:I%d", month, day+1, day+1)
-	resp, err := srv.Spreadsheets.Values.Get(spreadsheetID, workingRange).Do()
+	receivedRange, err := srv.Spreadsheets.Values.Get(spreadsheetID, workingRange).Do()
 	if err != nil {
 		log.Fatalf("Unable to retrieve data from sheet: %v", err)
-		return err
 	}
-	log.Println(resp.Values)
-	var vr sheets.ValueRange
+	var resultRange sheets.ValueRange
 	var myValues []interface{}
-	if len(resp.Values) == 0 {
-		myValues = []interface{}{description, sum}
+	if len(receivedRange.Values) == 0 {
+		myValues = []interface{}{receivedKey, sum}
 	} else {
-		receivedKey := resp.Values[0][0].(string)
-		if strings.Contains(receivedKey, " + ") {
-			receivedKey = strings.Replace(receivedKey, " + ", ", ", -1)
-		}
-		receivedValue := resp.Values[0][1].(string)
-		if strings.HasPrefix(receivedValue, "SUM") { // In case SUM() function is used in Sheet to sum the exchanges
-			receivedValue = receivedValue[4 : len(receivedValue)-2]
-			for _, word := range strings.Split(receivedValue, ", ") {
-				if value, _ := strconv.ParseFloat(word, 64); err == nil {
-					sum += value
-					continue
-				}
-			}
-			myValues = []interface{}{strings.ToLower(receivedKey + ", " + description), sum}
-		} else {
-			floatValue, _ := strconv.ParseFloat(receivedValue, 64)
-			myValues = []interface{}{strings.ToLower(receivedKey + ", " + description), floatValue + sum}
-		}
+		key := prepareKey(receivedKey, receivedRange.Values[0][0].(string))
+		value := prepareValue(sum, receivedRange.Values[0][1].(string))
+		myValues = []interface{}{strings.ToLower(key), value}
 	}
-	vr.Values = append(vr.Values, myValues)
-	log.Println(vr.Values)
-	_, err = srv.Spreadsheets.Values.Update(spreadsheetID, workingRange, &vr).ValueInputOption("RAW").Do()
-	if err != nil {
-		log.Fatalf("Unable to retrieve data from sheet. %v", err)
+	resultRange.Values = append(resultRange.Values, myValues)
+	log.Println(resultRange.Values)
+	if _, err = srv.Spreadsheets.Values.Update(spreadsheetID, workingRange, &resultRange).ValueInputOption("RAW").Do(); err != nil {
 		return err
 	}
 	return nil
@@ -227,6 +232,7 @@ func main() {
 		err := updateTable(update.Message.Text)
 		var replyMessage tgbotapi.MessageConfig
 		if err != nil {
+			log.Printf("Following error accured: %v", err)
 			replyMessage = tgbotapi.NewMessage(update.Message.Chat.ID, "Some error accured")
 		} else {
 			replyMessage = tgbotapi.NewMessage(update.Message.Chat.ID, "Done")
