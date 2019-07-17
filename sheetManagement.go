@@ -56,7 +56,7 @@ func getClient(config *oauth2.Config) *http.Client {
 	tokenType := os.Getenv("SHEET_TOKEN_TYPE")
 	refreshToken := os.Getenv("SHEET_REFRESH_TOKEN")
 	expireTime := os.Getenv("SHEET_TOKEN_EXPIRE_TIME")
-	if accessToken != "" && tokenType != "" && refreshToken != "" {
+	if accessToken != "" && tokenType != "" && refreshToken != "" && expireTime != "" {
 		expiry, _ := time.Parse(time.RFC3339, expireTime)
 		token := &oauth2.Token{
 			AccessToken:  accessToken,
