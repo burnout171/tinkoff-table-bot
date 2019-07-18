@@ -19,6 +19,8 @@ import (
 	"google.golang.org/api/sheets/v4"
 )
 
+var spreadsheetID = os.Getenv("SHEET_ID")
+
 func getConfig() *oauth2.Config {
 	clientID := os.Getenv("GOOGLE_CLIENT_ID")
 	projectID := os.Getenv("GOOGLE_PROJECT_ID")
@@ -181,15 +183,19 @@ func prepareValue(sum float64, currentValue string) float64 {
 	return sum + floatValue
 }
 
-func updateTable(input string) error {
-	receivedKey, sum := parseInput(input)
+func initServiceConnection() *sheets.Service {
 	config := getConfig()
 	client := getClient(config)
-	srv, err := sheets.New(client)
+	service, err := sheets.New(client)
 	if err != nil {
 		log.Fatalf("Unable to retrieve Sheets client: %v", err)
 	}
-	spreadsheetID := os.Getenv("SHEET_ID")
+	return service
+}
+
+func updateTable(input string) error {
+	receivedKey, sum := parseInput(input)
+	srv := initServiceConnection()
 	month, day := currentDate()
 	workingRange := fmt.Sprintf("%s!H%d:I%d", month, day+1, day+1)
 	receivedRange, err := srv.Spreadsheets.Values.Get(spreadsheetID, workingRange).Do()
@@ -213,6 +219,39 @@ func updateTable(input string) error {
 	return nil
 }
 
+func getDailyBalance() string {
+	srv := initServiceConnection()
+	month, day := currentDate()
+	workingRange := fmt.Sprintf("%s!K%d", month, day+1)
+	receivedRange, err := srv.Spreadsheets.Values.Get(spreadsheetID, workingRange).Do()
+	if err != nil {
+		log.Fatalf("Unable to retrieve data from sheet: %v", err)
+	}
+	return receivedRange.Values[0][0].(string)
+}
+
+func getMonthlyBalance() string {
+	srv := initServiceConnection()
+	month, _ := currentDate()
+	workingRange := fmt.Sprintf("%s!K33", month)
+	receivedRange, err := srv.Spreadsheets.Values.Get(spreadsheetID, workingRange).Do()
+	if err != nil {
+		log.Fatalf("Unable to retrieve data from sheet: %v", err)
+	}
+	return receivedRange.Values[0][0].(string)
+}
+
+func getMonthlyAccumulation() string {
+	srv := initServiceConnection()
+	month, _ := currentDate()
+	workingRange := fmt.Sprintf("%s!D21", month)
+	receivedRange, err := srv.Spreadsheets.Values.Get(spreadsheetID, workingRange).Do()
+	if err != nil {
+		log.Fatalf("Unable to retrieve data from sheet: %v", err)
+	}
+	return receivedRange.Values[0][0].(string)
+}
+
 func main() {
 	bot, err := tgbotapi.NewBotAPI(os.Getenv("TELEGRAM_TOKEN"))
 	if err != nil {
@@ -227,6 +266,21 @@ func main() {
 	updates, err := bot.GetUpdatesChan(u)
 	for update := range updates {
 		if update.Message == nil {
+			continue
+		}
+		if update.Message.IsCommand() {
+			msg := tgbotapi.NewMessage(update.Message.Chat.ID, "")
+			switch update.Message.Command() {
+			case "db":
+				msg.Text = getDailyBalance()
+			case "mb":
+				msg.Text = getMonthlyBalance()
+			case "ma":
+				msg.Text = getMonthlyAccumulation()
+			default:
+				msg.Text = "Unknown command"
+			}
+			bot.Send(msg)
 			continue
 		}
 		err := updateTable(update.Message.Text)
