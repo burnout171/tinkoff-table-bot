@@ -179,6 +179,7 @@ func prepareValue(sum float64, currentValue string) float64 {
 		}
 		return sum
 	}
+	currentValue = strings.ReplaceAll(currentValue, ",", "")
 	floatValue, _ := strconv.ParseFloat(currentValue, 64)
 	return sum + floatValue
 }
