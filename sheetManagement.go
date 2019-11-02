@@ -194,12 +194,11 @@ func initServiceConnection() *sheets.Service {
 	return service
 }
 
-func updateTable(input string) error {
+func updateTable(connection *sheets.Service, input string) error {
 	receivedKey, sum := parseInput(input)
-	srv := initServiceConnection()
 	month, day := currentDate()
 	workingRange := fmt.Sprintf("%s!H%d:I%d", month, day+1, day+1)
-	receivedRange, err := srv.Spreadsheets.Values.Get(spreadsheetID, workingRange).Do()
+	receivedRange, err := connection.Spreadsheets.Values.Get(spreadsheetID, workingRange).Do()
 	if err != nil {
 		log.Fatalf("Unable to retrieve data from sheet: %v", err)
 	}
@@ -214,39 +213,36 @@ func updateTable(input string) error {
 	}
 	resultRange.Values = append(resultRange.Values, myValues)
 	log.Println(resultRange.Values)
-	if _, err = srv.Spreadsheets.Values.Update(spreadsheetID, workingRange, &resultRange).ValueInputOption("RAW").Do(); err != nil {
+	if _, err = connection.Spreadsheets.Values.Update(spreadsheetID, workingRange, &resultRange).ValueInputOption("RAW").Do(); err != nil {
 		return err
 	}
 	return nil
 }
 
-func getDailyBalance() string {
-	srv := initServiceConnection()
+func getDailyBalance(connection *sheets.Service) string {
 	month, day := currentDate()
 	workingRange := fmt.Sprintf("%s!K%d", month, day+1)
-	receivedRange, err := srv.Spreadsheets.Values.Get(spreadsheetID, workingRange).Do()
+	receivedRange, err := connection.Spreadsheets.Values.Get(spreadsheetID, workingRange).Do()
 	if err != nil {
 		log.Fatalf("Unable to retrieve data from sheet: %v", err)
 	}
 	return receivedRange.Values[0][0].(string)
 }
 
-func getMonthlyBalance() string {
-	srv := initServiceConnection()
+func getMonthlyBalance(connection *sheets.Service) string {
 	month, _ := currentDate()
 	workingRange := fmt.Sprintf("%s!K33", month)
-	receivedRange, err := srv.Spreadsheets.Values.Get(spreadsheetID, workingRange).Do()
+	receivedRange, err := connection.Spreadsheets.Values.Get(spreadsheetID, workingRange).Do()
 	if err != nil {
 		log.Fatalf("Unable to retrieve data from sheet: %v", err)
 	}
 	return receivedRange.Values[0][0].(string)
 }
 
-func getMonthlyAccumulation() string {
-	srv := initServiceConnection()
+func getMonthlyAccumulation(connection *sheets.Service) string {
 	month, _ := currentDate()
 	workingRange := fmt.Sprintf("%s!D21", month)
-	receivedRange, err := srv.Spreadsheets.Values.Get(spreadsheetID, workingRange).Do()
+	receivedRange, err := connection.Spreadsheets.Values.Get(spreadsheetID, workingRange).Do()
 	if err != nil {
 		log.Fatalf("Unable to retrieve data from sheet: %v", err)
 	}
@@ -256,7 +252,7 @@ func getMonthlyAccumulation() string {
 func main() {
 	bot, err := tgbotapi.NewBotAPI(os.Getenv("TELEGRAM_TOKEN"))
 	if err != nil {
-		log.Panic(err)
+		log.Fatalf("Could not connect to telegram: %v", err)
 	}
 	if debug, _ := strconv.ParseBool(os.Getenv("ENABLE_DEBUG")); debug == true {
 		bot.Debug = true
@@ -265,6 +261,7 @@ func main() {
 	u := tgbotapi.NewUpdate(0)
 	u.Timeout = 60
 	updates, err := bot.GetUpdatesChan(u)
+	connection := initServiceConnection()
 	for update := range updates {
 		if update.Message == nil {
 			continue
@@ -273,24 +270,24 @@ func main() {
 			msg := tgbotapi.NewMessage(update.Message.Chat.ID, "")
 			switch update.Message.Command() {
 			case "db":
-				msg.Text = getDailyBalance()
+				msg.Text = getDailyBalance(connection)
 			case "mb":
-				msg.Text = getMonthlyBalance()
+				msg.Text = getMonthlyBalance(connection)
 			case "ma":
-				msg.Text = getMonthlyAccumulation()
+				msg.Text = getMonthlyAccumulation(connection)
 			default:
 				msg.Text = "Unknown command"
 			}
 			bot.Send(msg)
 			continue
 		}
-		err := updateTable(update.Message.Text)
+		err := updateTable(connection, update.Message.Text)
 		var replyMessage tgbotapi.MessageConfig
 		if err != nil {
 			log.Printf("Following error accured: %v", err)
 			replyMessage = tgbotapi.NewMessage(update.Message.Chat.ID, "Some error accured")
 		} else {
-			replyText := "Остаток на день " + getDailyBalance()
+			replyText := "Остаток на день " + getDailyBalance(connection)
 			replyMessage = tgbotapi.NewMessage(update.Message.Chat.ID, replyText)
 		}
 		replyMessage.ReplyToMessageID = update.Message.MessageID
