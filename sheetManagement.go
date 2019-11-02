@@ -194,13 +194,13 @@ func initServiceConnection() *sheets.Service {
 	return service
 }
 
-func updateTable(connection *sheets.Service, input string) error {
+func updateTable(connection *sheets.Service, input string) (string, error) {
 	receivedKey, sum := parseInput(input)
 	month, day := currentDate()
 	workingRange := fmt.Sprintf("%s!H%d:I%d", month, day+1, day+1)
 	receivedRange, err := connection.Spreadsheets.Values.Get(spreadsheetID, workingRange).Do()
 	if err != nil {
-		return err
+		return "", err
 	}
 	var resultRange sheets.ValueRange
 	var myValues []interface{}
@@ -212,37 +212,50 @@ func updateTable(connection *sheets.Service, input string) error {
 		myValues = []interface{}{strings.ToLower(key), value}
 	}
 	resultRange.Values = append(resultRange.Values, myValues)
-	log.Println(resultRange.Values)
-	if _, err = connection.Spreadsheets.Values.Update(spreadsheetID, workingRange, &resultRange).ValueInputOption("RAW").Do(); err != nil {
-		return err
+	updateResponse, err := connection.Spreadsheets.Values.Update(spreadsheetID, workingRange, &resultRange).ValueInputOption("RAW").Do()
+	if (err != nil) {
+		return "", err
 	}
-	return nil
+	return updateResponse.UpdatedData.Values[0][0].(string), nil
 }
 
-func getDailyBalance(connection *sheets.Service) string {
+func getDailyBalance(connection *sheets.Service) (string, error) {
 	month, day := currentDate()
 	workingRange := fmt.Sprintf("%s!K%d", month, day+1)
-	return getSheetData(connection, workingRange)
+	return getSimpleSheetData(connection, workingRange)
 }
 
-func getMonthlyBalance(connection *sheets.Service) string {
+func getMonthlyBalance(connection *sheets.Service) (string, error) {
 	month, _ := currentDate()
 	workingRange := fmt.Sprintf("%s!K33", month)
-	return getSheetData(connection, workingRange)
+	return getSimpleSheetData(connection, workingRange)
 }
 
-func getMonthlyAccumulation(connection *sheets.Service) string {
+func getMonthlyAccumulation(connection *sheets.Service) (string, error) {
 	month, _ := currentDate()
 	workingRange := fmt.Sprintf("%s!D21", month)
-	return getSheetData(connection, workingRange)
+	return getSimpleSheetData(connection, workingRange)
 }
 
-func getSheetData(connection *sheets.Service, workingRange string) string {
+func getSimpleSheetData(connection *sheets.Service, workingRange string) (string, error) {
 	receivedRange, err := connection.Spreadsheets.Values.Get(spreadsheetID, workingRange).Do()
 	if err != nil {
-		log.Fatalf("Unable to retrieve data from sheet: %v", err)
+		return "", err
 	}
-	return receivedRange.Values[0][0].(string)
+	return receivedRange.Values[0][0].(string), nil
+}
+
+func processCommand(connection *sheets.Service, command string) (string, error) {
+	switch command {
+	case "db":
+		return getDailyBalance(connection)
+	case "mb":
+		return getMonthlyBalance(connection)
+	case "ma":
+		return getMonthlyAccumulation(connection)
+	default:
+		return "Unknown command", nil
+	}
 }
 
 func main() {
@@ -253,37 +266,40 @@ func main() {
 	if debug, _ := strconv.ParseBool(os.Getenv("ENABLE_DEBUG")); debug == true {
 		bot.Debug = true
 	}
-	log.Printf("Authorized on account %s", bot.Self.UserName)
 	u := tgbotapi.NewUpdate(0)
 	u.Timeout = 60
 	updates, err := bot.GetUpdatesChan(u)
 	connection := initServiceConnection()
+	log.Printf("Authorized on account %s", bot.Self.UserName)
 	for update := range updates {
 		if update.Message == nil {
 			continue
 		}
 		if update.Message.IsCommand() {
 			msg := tgbotapi.NewMessage(update.Message.Chat.ID, "")
-			switch update.Message.Command() {
-			case "db":
-				msg.Text = getDailyBalance(connection)
-			case "mb":
-				msg.Text = getMonthlyBalance(connection)
-			case "ma":
-				msg.Text = getMonthlyAccumulation(connection)
-			default:
-				msg.Text = "Unknown command"
+			text, err := processCommand(connection, update.Message.Command())
+			if (err != nil) {
+				log.Printf("Following error accured: %v", err)
+				msg.Text = "Some error accured"
+			} else {
+				msg.Text = text
 			}
 			bot.Send(msg)
 			continue
 		}
-		err := updateTable(connection, update.Message.Text)
+		_, err := updateTable(connection, update.Message.Text)
 		var replyMessage tgbotapi.MessageConfig
-		if err != nil {
+		if (err != nil) {
 			log.Printf("Following error accured: %v", err)
 			replyMessage = tgbotapi.NewMessage(update.Message.Chat.ID, "Some error accured")
 		} else {
-			replyText := "Остаток на день " + getDailyBalance(connection)
+			balance, err := getDailyBalance(connection)
+			var replyText string
+			if (err != nil) {
+				replyText = "Баланс обновлен"
+			} else {
+				replyText = "Остаток на день " + balance
+			}
 			replyMessage = tgbotapi.NewMessage(update.Message.Chat.ID, replyText)
 		}
 		replyMessage.ReplyToMessageID = update.Message.MessageID
