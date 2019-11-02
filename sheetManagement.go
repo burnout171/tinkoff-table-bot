@@ -200,7 +200,7 @@ func updateTable(connection *sheets.Service, input string) error {
 	workingRange := fmt.Sprintf("%s!H%d:I%d", month, day+1, day+1)
 	receivedRange, err := connection.Spreadsheets.Values.Get(spreadsheetID, workingRange).Do()
 	if err != nil {
-		log.Fatalf("Unable to retrieve data from sheet: %v", err)
+		return err
 	}
 	var resultRange sheets.ValueRange
 	var myValues []interface{}
@@ -222,26 +222,22 @@ func updateTable(connection *sheets.Service, input string) error {
 func getDailyBalance(connection *sheets.Service) string {
 	month, day := currentDate()
 	workingRange := fmt.Sprintf("%s!K%d", month, day+1)
-	receivedRange, err := connection.Spreadsheets.Values.Get(spreadsheetID, workingRange).Do()
-	if err != nil {
-		log.Fatalf("Unable to retrieve data from sheet: %v", err)
-	}
-	return receivedRange.Values[0][0].(string)
+	return getSheetData(connection, workingRange)
 }
 
 func getMonthlyBalance(connection *sheets.Service) string {
 	month, _ := currentDate()
 	workingRange := fmt.Sprintf("%s!K33", month)
-	receivedRange, err := connection.Spreadsheets.Values.Get(spreadsheetID, workingRange).Do()
-	if err != nil {
-		log.Fatalf("Unable to retrieve data from sheet: %v", err)
-	}
-	return receivedRange.Values[0][0].(string)
+	return getSheetData(connection, workingRange)
 }
 
 func getMonthlyAccumulation(connection *sheets.Service) string {
 	month, _ := currentDate()
 	workingRange := fmt.Sprintf("%s!D21", month)
+	return getSheetData(connection, workingRange)
+}
+
+func getSheetData(connection *sheets.Service, workingRange string) string {
 	receivedRange, err := connection.Spreadsheets.Values.Get(spreadsheetID, workingRange).Do()
 	if err != nil {
 		log.Fatalf("Unable to retrieve data from sheet: %v", err)
