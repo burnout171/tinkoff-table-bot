@@ -194,13 +194,13 @@ func initServiceConnection() *sheets.Service {
 	return service
 }
 
-func updateTable(connection *sheets.Service, input string) (string, error) {
+func updateTable(connection *sheets.Service, input string) (int64, error) {
 	receivedKey, sum := parseInput(input)
 	month, day := currentDate()
 	workingRange := fmt.Sprintf("%s!H%d:I%d", month, day+1, day+1)
 	receivedRange, err := connection.Spreadsheets.Values.Get(spreadsheetID, workingRange).Do()
 	if err != nil {
-		return "", err
+		return -1, err
 	}
 	var resultRange sheets.ValueRange
 	var myValues []interface{}
@@ -214,9 +214,9 @@ func updateTable(connection *sheets.Service, input string) (string, error) {
 	resultRange.Values = append(resultRange.Values, myValues)
 	updateResponse, err := connection.Spreadsheets.Values.Update(spreadsheetID, workingRange, &resultRange).ValueInputOption("RAW").Do()
 	if (err != nil) {
-		return "", err
+		return -1, err
 	}
-	return updateResponse.UpdatedData.Values[0][0].(string), nil
+	return updateResponse.UpdatedCells, nil
 }
 
 func getDailyBalance(connection *sheets.Service) (string, error) {
