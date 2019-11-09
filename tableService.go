@@ -16,90 +16,127 @@ import (
 	"google.golang.org/api/sheets/v4"
 )
 
-// TableService aggregates table management functions.
-type TableService struct {
+// ConnectionProperties holds all properties needed to create a connection
+type ConnectionProperties struct {
+	SpreadsheetID string
+	ClientID string
+	ProjectID string
+	AuthURI string
+	TokenURI string
+	ClientSecret string
+	RedirectUris string
+	AccessToken string
+	TokenType string
+	RefreshToken string
+	ExpireTime string
 }
 
-// CreateConnection create a connection to manage the table.
-func (ts *TableService) CreateConnection() *sheets.Service {
-	config := ts.getConfig()
-	client := ts.getClient(config)
+// TableService creates a connection and simplify interactions with it
+type TableService struct {
+	SpreadsheetID string
+	service *sheets.Service
+}
+
+// NewTableService factory method to create a TableService
+func NewTableService(properties *ConnectionProperties) (*TableService, error) {
+	ts := TableService{}
+	config, err := ts.getConfig(properties)
+	if err != nil {
+		return nil, err
+	}
+	client, err := ts.getClient(properties, config) 
+	if err != nil {
+		return nil, err
+	}
 	service, err := sheets.New(client)
 	if err != nil {
-		log.Fatalf("Unable to retrieve Sheets client: %v", err)
+		log.Printf("Unable to retrieve Sheets client: %v", err)
+		return nil, err
 	}
-	return service
+	ts.SpreadsheetID = properties.SpreadsheetID
+	ts.service = service
+	return &ts, nil
 }
 
-func (ts *TableService) getConfig() *oauth2.Config {
-	clientID := os.Getenv("GOOGLE_CLIENT_ID")
-	projectID := os.Getenv("GOOGLE_PROJECT_ID")
-	authURI := os.Getenv("GOOGLE_AUTH_URI")
-	tokenURI := os.Getenv("GOOGLE_TOKEN_URI")
-	clientSecret := os.Getenv("GOOGLE_CLIENT_SECRET")
-	redirectUris := os.Getenv("GOOGLE_REDIRECT_URIS")
+// GetData from the workingRange cells
+func (ts *TableService) GetData(workingRange string) (*sheets.ValueRange, error) {
+	return ts.service.Spreadsheets.Values.Get(ts.SpreadsheetID, workingRange).Do()
+}
+
+// UpdateData in the workingRange cells
+func (ts *TableService) UpdateData(workingRange string, resultRange *sheets.ValueRange) (*sheets.UpdateValuesResponse, error) {
+	return ts.service.Spreadsheets.Values.Update(ts.SpreadsheetID, workingRange, resultRange).ValueInputOption("RAW").Do()
+}
+
+func (ts *TableService) getConfig(properties *ConnectionProperties) (*oauth2.Config, error) {
 	scope := "https://www.googleapis.com/auth/spreadsheets"
-	if clientID != "" && projectID != "" && authURI != "" &&
-		tokenURI != "" && clientSecret != "" && redirectUris != "" {
-		return &oauth2.Config{
-			ClientID:     clientID,
-			ClientSecret: clientSecret,
-			RedirectURL:  redirectUris,
+	if properties.ClientID != "" && properties.ProjectID != "" && properties.AuthURI != "" &&
+	properties.TokenURI != "" && properties.ClientSecret != "" && properties.RedirectUris != "" {
+		return &oauth2.Config {
+			ClientID:     properties.ClientID,
+			ClientSecret: properties.ClientSecret,
+			RedirectURL:  properties.RedirectUris,
 			Scopes:       []string{scope},
 			Endpoint: oauth2.Endpoint{
-				AuthURL:  authURI,
-				TokenURL: tokenURI,
+				AuthURL:  properties.AuthURI,
+				TokenURL: properties.TokenURI,
 			},
-		}
+		}, nil
 	}
 	credentialsBytes, err := ioutil.ReadFile("credentials.json")
 	if err != nil {
-		log.Fatalf("Unable to read client secret file: %v", err)
+		log.Printf("Unable to read client secret file: %v", err)
+		return nil, err
 	}
 	config, err := google.ConfigFromJSON(credentialsBytes, scope)
 	if err != nil {
-		log.Fatalf("Unable to parse client secret file to config: %v", err)
+		log.Printf("Unable to parse client secret file to config: %v", err)
+		return nil, err
 	}
-	return config
+	return config, nil
 }
 
-func (ts *TableService) getClient(config *oauth2.Config) *http.Client {
-	accessToken := os.Getenv("SHEET_ACCESS_TOKEN")
-	tokenType := os.Getenv("SHEET_TOKEN_TYPE")
-	refreshToken := os.Getenv("SHEET_REFRESH_TOKEN")
-	expireTime := os.Getenv("SHEET_TOKEN_EXPIRE_TIME")
-	if accessToken != "" && tokenType != "" && refreshToken != "" && expireTime != "" {
-		expiry, _ := time.Parse(time.RFC3339, expireTime)
+func (ts *TableService) getClient(properties *ConnectionProperties, config *oauth2.Config) (*http.Client, error) {
+	if properties.AccessToken != "" && properties.TokenType != "" && properties.RefreshToken != "" && properties.ExpireTime != "" {
+		expiry, _ := time.Parse(time.RFC3339, properties.ExpireTime)
 		token := &oauth2.Token{
-			AccessToken:  accessToken,
-			TokenType:    tokenType,
-			RefreshToken: refreshToken,
+			AccessToken:  properties.AccessToken,
+			TokenType:    properties.TokenType,
+			RefreshToken: properties.RefreshToken,
 			Expiry:       expiry,
 		}
-		return config.Client(context.Background(), token)
+		return config.Client(context.Background(), token), nil
 	}
 	tokenFile := "token.json"
 	token, err := ts.tokenFromFile(tokenFile)
 	if err != nil {
-		token = ts.getTokenFromWeb(config)
-		ts.saveToken(tokenFile, token)
+		token, err = ts.getTokenFromWeb(config)
+		if err != nil {
+			return nil, err
+		}
+		err := ts.saveToken(tokenFile, token)
+		if err != nil {
+			return nil, err
+		}
 	}
-	return config.Client(context.Background(), token)
+	return config.Client(context.Background(), token), nil
 }
 
-func (ts *TableService) getTokenFromWeb(config *oauth2.Config) *oauth2.Token {
+func (ts *TableService) getTokenFromWeb(config *oauth2.Config) (*oauth2.Token, error) {
 	authURL := config.AuthCodeURL("state-token", oauth2.AccessTypeOffline)
 	fmt.Printf("Go to the following link in your browser then type the " +
 		"authorization code: \n%v\n", authURL)
 	var authCode string
 	if _, err := fmt.Scan(&authCode); err != nil {
-		log.Fatalf("Unable to read authorization code: %v", err)
+		log.Printf("Unable to read authorization code: %v", err)
+		return nil, err
 	}
 	token, err := config.Exchange(context.TODO(), authCode)
 	if err != nil {
-		log.Fatalf("Unable to retrieve token from web: %v", err)
+		log.Printf("Unable to retrieve token from web: %v", err)
+		return nil, err
 	}
-	return token
+	return token, nil
 }
 
 func (ts *TableService) tokenFromFile(file string) (*oauth2.Token, error) {
@@ -113,12 +150,14 @@ func (ts *TableService) tokenFromFile(file string) (*oauth2.Token, error) {
 	return tok, err
 }
 
-func (ts *TableService) saveToken(path string, token *oauth2.Token) {
+func (ts *TableService) saveToken(path string, token *oauth2.Token) error {
 	fmt.Printf("Saving credential file to: %s\n", path)
 	f, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0600)
 	if err != nil {
-		log.Fatalf("Unable to cache oauth token: %v", err)
+		log.Printf("Unable to cache oauth token: %v", err)
+		return err
 	}
 	defer f.Close()
 	json.NewEncoder(f).Encode(token)
+	return nil
 }

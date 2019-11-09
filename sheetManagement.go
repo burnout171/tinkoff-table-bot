@@ -12,8 +12,6 @@ import (
 	"google.golang.org/api/sheets/v4"
 )
 
-var spreadsheetID = os.Getenv("SHEET_ID")
-
 func currentDate() (monthName string, day int) {
 	_, month, day := time.Now().Date()
 	switch month {
@@ -85,11 +83,11 @@ func prepareValue(sum float64, currentValue string) float64 {
 	return sum + floatValue
 }
 
-func updateTable(connection *sheets.Service, input string) (int64, error) {
+func updateTable(tableService *TableService, input string) (int64, error) {
 	receivedKey, sum := parseInput(input)
 	month, day := currentDate()
 	workingRange := fmt.Sprintf("%s!H%d:I%d", month, day+1, day+1)
-	receivedRange, err := connection.Spreadsheets.Values.Get(spreadsheetID, workingRange).Do()
+	receivedRange, err := tableService.GetData(workingRange)
 	if err != nil {
 		return -1, err
 	}
@@ -103,47 +101,47 @@ func updateTable(connection *sheets.Service, input string) (int64, error) {
 		myValues = []interface{}{strings.ToLower(key), value}
 	}
 	resultRange.Values = append(resultRange.Values, myValues)
-	updateResponse, err := connection.Spreadsheets.Values.Update(spreadsheetID, workingRange, &resultRange).ValueInputOption("RAW").Do()
+	updateResponse, err := tableService.UpdateData(workingRange, &resultRange)
 	if (err != nil) {
 		return -1, err
 	}
 	return updateResponse.UpdatedCells, nil
 }
 
-func getDailyBalance(connection *sheets.Service) (string, error) {
+func getDailyBalance(tableService *TableService) (string, error) {
 	month, day := currentDate()
 	workingRange := fmt.Sprintf("%s!K%d", month, day+1)
-	return getSimpleSheetData(connection, workingRange)
+	return getSimpleSheetData(tableService, workingRange)
 }
 
-func getMonthlyBalance(connection *sheets.Service) (string, error) {
+func getMonthlyBalance(tableService *TableService) (string, error) {
 	month, _ := currentDate()
 	workingRange := fmt.Sprintf("%s!K33", month)
-	return getSimpleSheetData(connection, workingRange)
+	return getSimpleSheetData(tableService, workingRange)
 }
 
-func getMonthlyAccumulation(connection *sheets.Service) (string, error) {
+func getMonthlyAccumulation(tableService *TableService) (string, error) {
 	month, _ := currentDate()
 	workingRange := fmt.Sprintf("%s!D21", month)
-	return getSimpleSheetData(connection, workingRange)
+	return getSimpleSheetData(tableService, workingRange)
 }
 
-func getSimpleSheetData(connection *sheets.Service, workingRange string) (string, error) {
-	receivedRange, err := connection.Spreadsheets.Values.Get(spreadsheetID, workingRange).Do()
+func getSimpleSheetData(tableService *TableService, workingRange string) (string, error) {
+	receivedRange, err := tableService.GetData(workingRange)
 	if err != nil {
 		return "", err
 	}
 	return receivedRange.Values[0][0].(string), nil
 }
 
-func processCommand(connection *sheets.Service, command string) (string, error) {
+func processCommand(tableService *TableService, command string) (string, error) {
 	switch command {
 	case "db":
-		return getDailyBalance(connection)
+		return getDailyBalance(tableService)
 	case "mb":
-		return getMonthlyBalance(connection)
+		return getMonthlyBalance(tableService)
 	case "ma":
-		return getMonthlyAccumulation(connection)
+		return getMonthlyAccumulation(tableService)
 	default:
 		return "Unknown command", nil
 	}
@@ -160,8 +158,23 @@ func main() {
 	u := tgbotapi.NewUpdate(0)
 	u.Timeout = 60
 	updates, err := bot.GetUpdatesChan(u)
-	tableService := TableService{}
-	connection := tableService.CreateConnection()
+	properties := &ConnectionProperties {
+		SpreadsheetID : os.Getenv("SHEET_ID"),
+		ClientID : os.Getenv("GOOGLE_CLIENT_ID"),
+		ProjectID : os.Getenv("GOOGLE_PROJECT_ID"),
+		AuthURI : os.Getenv("GOOGLE_AUTH_URI"),
+		TokenURI : os.Getenv("GOOGLE_TOKEN_URI"),
+		ClientSecret : os.Getenv("GOOGLE_CLIENT_SECRET"),
+		RedirectUris : os.Getenv("GOOGLE_REDIRECT_URIS"),
+		AccessToken : os.Getenv("SHEET_ACCESS_TOKEN"),
+		TokenType : os.Getenv("SHEET_TOKEN_TYPE"),
+		RefreshToken : os.Getenv("SHEET_REFRESH_TOKEN"),
+		ExpireTime : os.Getenv("SHEET_TOKEN_EXPIRE_TIME"),
+	}
+	tableService, err := NewTableService(properties)
+	if err != nil {
+		log.Fatal("Could not init a connection to Google sheet", err)
+	}
 	log.Printf("Authorized on account %s", bot.Self.UserName)
 	for update := range updates {
 		if update.Message == nil {
@@ -169,7 +182,7 @@ func main() {
 		}
 		if update.Message.IsCommand() {
 			msg := tgbotapi.NewMessage(update.Message.Chat.ID, "")
-			text, err := processCommand(connection, update.Message.Command())
+			text, err := processCommand(tableService, update.Message.Command())
 			if (err != nil) {
 				log.Printf("Following error accured: %v", err)
 				msg.Text = "Some error accured"
@@ -179,19 +192,20 @@ func main() {
 			bot.Send(msg)
 			continue
 		}
-		_, err := updateTable(connection, update.Message.Text)
+		_, err := updateTable(tableService, update.Message.Text)
 		var replyMessage tgbotapi.MessageConfig
 		if (err != nil) {
 			log.Printf("Following error accured: %v", err)
 			replyMessage = tgbotapi.NewMessage(update.Message.Chat.ID, "Some error accured")
 		} else {
-			balance, err := getDailyBalance(connection)
+			balance, err := getDailyBalance(tableService)
 			var replyText string
 			if (err != nil) {
 				replyText = "Баланс обновлен"
 			} else {
 				replyText = "Остаток на день " + balance
 			}
+			log.Print("Ok: ", replyText)
 			replyMessage = tgbotapi.NewMessage(update.Message.Chat.ID, replyText)
 		}
 		replyMessage.ReplyToMessageID = update.Message.MessageID
