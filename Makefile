@@ -5,10 +5,10 @@ DOCKER_CMD=$(DOCKER_BUILD)/tinkoff-table-bot
 
 $(DOCKER_CMD): clean
 	mkdir -p $(DOCKER_BUILD)
-	$(GO_BUILD_ENV) go build -v -o $(DOCKER_CMD) ./src
+	$(GO_BUILD_ENV) go build -v -o $(DOCKER_CMD) .
 
 clean:
 	rm -rf $(DOCKER_BUILD)
 
 heroku: $(DOCKER_CMD)
-heroku container:push worker
+		heroku container:push worker
