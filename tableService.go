@@ -39,7 +39,7 @@ type TableService struct {
 
 // NewTableService factory method to create a TableService
 func NewTableService(properties *ConnectionProperties) (*TableService, error) {
-	ts := TableService{}
+	ts := &TableService{}
 	config, err := ts.getConfig(properties)
 	if err != nil {
 		return nil, err
@@ -55,7 +55,7 @@ func NewTableService(properties *ConnectionProperties) (*TableService, error) {
 	}
 	ts.SpreadsheetID = properties.SpreadsheetID
 	ts.service = service
-	return &ts, nil
+	return ts, nil
 }
 
 // GetData from the workingRange cells
