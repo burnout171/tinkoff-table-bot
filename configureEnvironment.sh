@@ -15,3 +15,5 @@ heroku config:set -a ${herokuProjectName} SHEET_TOKEN_TYPE=<SHEET_TOKEN_TYPE>
 heroku config:set -a ${herokuProjectName} SHEET_REFRESH_TOKEN=<SHEET_REFRESH_TOKEN>
 heroku config:set -a ${herokuProjectName} SHEET_TOKEN_EXPIRE_TIME=<SHEET_TOKEN_EXPIRE_TIME>
 heroku config:set -a ${herokuProjectName} ENABLE_DEBUG=<ENABLE_DEBUG>
+heroku config:set -a ${herokuProjectName} ENVIRONMENT=<ENVIRONMENT>
+heroku config:set -a ${herokuProjectName} URL=<URL>

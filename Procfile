@@ -1,1 +1,1 @@
-worker: bin/tinkoff-table-bot
+web: bin/tinkoff-table-bot
