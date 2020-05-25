@@ -93,7 +93,6 @@ func main() {
 		if lastProcessedMessageID == update.Message.MessageID {
 			continue
 		}
-		lastProcessedMessageID = update.Message.MessageID
 		if update.Message.IsCommand() {
 			msg := processCommand(tm, &update)
 			bot.Send(msg)
@@ -101,5 +100,6 @@ func main() {
 		}
 		replyMessage := processUpdate(tm, &update)
 		bot.Send(replyMessage)
+		lastProcessedMessageID = update.Message.MessageID
 	}
 }
