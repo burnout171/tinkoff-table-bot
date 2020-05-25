@@ -85,10 +85,15 @@ func processUpdate(tm *TableManagement, update *tgbotapi.Update) tgbotapi.Messag
 func main() {
 	bot, updates, tm := configure()
 	log.Printf("Authorized on account %s", bot.Self.UserName)
+	var lastProcessedMessageID int
 	for update := range updates {
 		if update.Message == nil {
 			continue
 		}
+		if lastProcessedMessageID == update.Message.MessageID {
+			continue
+		}
+		lastProcessedMessageID = update.Message.MessageID
 		if update.Message.IsCommand() {
 			msg := processCommand(tm, &update)
 			bot.Send(msg)
