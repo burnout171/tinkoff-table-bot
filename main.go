@@ -2,6 +2,8 @@ package main
 
 import (
 	"log"
+	"fmt"
+	"net/http"
 	"os"
 	"strconv"
 
@@ -9,18 +11,13 @@ import (
 )
 
 func configure() (*tgbotapi.BotAPI, tgbotapi.UpdatesChannel, *TableManagement) {
-	bot, err := tgbotapi.NewBotAPI(os.Getenv("TELEGRAM_TOKEN"))
+	token := os.Getenv("TELEGRAM_TOKEN")
+	bot, err := tgbotapi.NewBotAPI(token)
 	if err != nil {
 		log.Fatalf("Could not connect to telegram: %v", err)
 	}
 	if debug, _ := strconv.ParseBool(os.Getenv("ENABLE_DEBUG")); debug == true {
 		bot.Debug = true
-	}
-	u := tgbotapi.NewUpdate(0)
-	u.Timeout = 60
-	updates, err := bot.GetUpdatesChan(u)
-	if err != nil {
-		log.Fatal("Could not init a connection to Google sheet", err)
 	}
 	properties := &ConnectionProperties{
 		SpreadsheetID: os.Getenv("SHEET_ID"),
@@ -37,6 +34,23 @@ func configure() (*tgbotapi.BotAPI, tgbotapi.UpdatesChannel, *TableManagement) {
 	}
 	tableService, err := NewTableService(properties)
 	tableManagement := NewTableManagement(tableService)
+	if "heroku" == os.Getenv("ENVIRONMENT") {
+		bot.RemoveWebhook()
+		publicURL := fmt.Sprintf("%s/%s", os.Getenv("URL"), token)
+		_, err = bot.SetWebhook(tgbotapi.NewWebhook(publicURL))
+		if err != nil {
+			log.Fatalf("Could not register webhook: %v", err)
+		}
+		updates := bot.ListenForWebhook("/" + token)
+		go http.ListenAndServe("0.0.0.0:" + os.Getenv("PORT"), nil)
+		return bot, updates, tableManagement
+	}
+	u := tgbotapi.NewUpdate(0)
+	u.Timeout = 60
+	updates, err := bot.GetUpdatesChan(u)
+	if err != nil {
+		log.Fatal("Could not init a connection to Telegram", err)
+	}
 	return bot, updates, tableManagement
 }
 
@@ -45,7 +59,7 @@ func processCommand(tm *TableManagement, update *tgbotapi.Update) tgbotapi.Messa
 	if err != nil {
 		log.Printf("Following error accured: %v", err)
 		return tgbotapi.NewMessage(update.Message.Chat.ID, "Some error accured")
-	} 
+	}
 	return tgbotapi.NewMessage(update.Message.Chat.ID, balance)
 }
 
@@ -71,10 +85,15 @@ func processUpdate(tm *TableManagement, update *tgbotapi.Update) tgbotapi.Messag
 func main() {
 	bot, updates, tm := configure()
 	log.Printf("Authorized on account %s", bot.Self.UserName)
+	var lastProcessedMessageID int
 	for update := range updates {
 		if update.Message == nil {
 			continue
 		}
+		if lastProcessedMessageID == update.Message.MessageID {
+			continue
+		}
+		lastProcessedMessageID = update.Message.MessageID
 		if update.Message.IsCommand() {
 			msg := processCommand(tm, &update)
 			bot.Send(msg)

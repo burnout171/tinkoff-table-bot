@@ -11,4 +11,4 @@ clean:
 	rm -rf $(DOCKER_BUILD)
 
 heroku: $(DOCKER_CMD)
-		heroku container:push worker
+		heroku container:push web
