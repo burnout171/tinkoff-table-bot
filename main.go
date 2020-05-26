@@ -93,12 +93,12 @@ func main() {
 		if lastProcessedMessageID == update.Message.MessageID {
 			continue
 		}
+		var replyMessage tgbotapi.MessageConfig
 		if update.Message.IsCommand() {
-			msg := processCommand(tm, &update)
-			bot.Send(msg)
-			continue
+			replyMessage = processCommand(tm, &update)
+		} else {
+			replyMessage = processUpdate(tm, &update)
 		}
-		replyMessage := processUpdate(tm, &update)
 		bot.Send(replyMessage)
 		lastProcessedMessageID = update.Message.MessageID
 	}
